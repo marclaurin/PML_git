@@ -1,0 +1,115 @@
+---
+title: "Practical Machine Learning Course Project"
+author: "Marc Vaglio-Laurin"
+date: "Wednesday, Sept 23, 2015"
+output: html_document
+---
+
+##Introduction
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways.  These different techniques or classes are defined as:
+
+Class A - exercise performed exactly according to the specification
+Class B - exercise performed incorrectly; subject throwing the elbows to the front 
+Class C - exercise performed incorrectly; subject lifting the dumbbell only halfway 
+Class D - exercise performed incorrectly; subject lowering the dumbbell only halfway
+Class E - exercise performed incorrectly; subject throwing the hips to the front 
+
+More information is available from the website http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset). 
+
+The goal of this project is to predict how well each participant performs each exercise.  We will use 2 different modeling techniques - CART and Random Forest - as well as partition our data into training and testing to help increase the accuracy of model predictions.
+
+##Load required libraries
+```{r Library, echo=TRUE}
+library(knitr)
+library(caret)
+library(rpart)
+library(e1071)
+library(randomForest)
+```
+
+##Load source data
+```{r Data, echo=TRUE}
+testing<-read.csv("C:/Users/staples/Documents/Coursera/PracticalMachineLearning/Data/pml-testing.csv")
+training<-read.csv("C:/Users/staples/Documents/Coursera/PracticalMachineLearning/Data/pml-training.csv")
+```
+
+##Preview source data
+###Let's take a quick look at the data we will be analyzing.
+```{r Preview, echo=TRUE}
+tail(training)
+```
+
+##Cleanse source data
+###As seen above, a number of the data values in the source data are N/A and some are DIV/0! or blank, so let's remove those.
+```{r Cleanse, echo=TRUE}
+train<-read.csv("C:/Users/staples/Documents/Coursera/PracticalMachineLearning/Data/pml-training.csv",header=TRUE,na.strings=c("NA","#DIV/0!",""))
+test<-read.csv("C:/Users/staples/Documents/Coursera/PracticalMachineLearning/Data/pml-testing.csv",header=TRUE,na.strings=c("NA","#DIV/0!",""))
+trainNA<-apply(train,2,function(x) {sum(is.na(x))})
+testNA<-apply(test,2,function(y) {sum(is.na(y))})
+train<-train[,which(trainNA == 0)]
+test<-test[,which(testNA == 0)]
+```
+After cleansing data, 60 variables remain (out of an original count of 160 variables) in both the train and test data.
+
+##Eliminate unnecessary variables
+###Since we are only concerned with how well participants did the exercise (data from acceleromoters from belt, forearm, arm, and dumbell from each of the participants) and are not concerned with the names of the participants or when they did the exercises, we can remove the first 7 variables (X, user_name, raw_timestamp_part_1, raw_timestamp_part_2, cvtd_timestamp, new_window, num_window) from the train and test data.
+```{r Elim, echo=TRUE}
+train<-train[,-c(1:7)]
+test<-test[,-c(1:7)]
+```
+
+###The final variable in the test data set, problem_id, is not needed, so let's also remove that one.
+```{r Elim2, echo=TRUE}
+test<-test[,c(1:52)]
+```
+
+###And now a quick look at the variables in our source data.
+```{r String, echo=TRUE}
+str(train)
+```
+We are left with 53 numeric and integer variables in the train data and 52 num and int variables in the test data, with the exception of the 'classe' (factor) variable in the train data, which is the evaluation of how well each participant performed each exercise and is the variable we want to predict.
+
+##Set seed
+###Setting a seed value should enable us to get identical results in subsequent runs of the code
+```{r Seed, echo=TRUE}
+set.seed(12345)
+```
+
+##Partition training data into training and testing (cross validation)
+###We will partition our training data into trainPart and testPart, with a 75%/25% split, respectively.  The testPart data will be used as validation to help ensure we don't overfit our model to the trainPart data; that is, we will train the models with the trainPart data and then test or validate with the testPart data to help ensure the model generalizes well to data other than the testPart.
+```{r Partition, echo=TRUE}
+partition<-createDataPartition(y=train$classe,p=0.75,list=FALSE)
+trainPart<-train[partition,]
+testPart<-train[-partition,]
+```
+
+##Exploratory Data Analysis
+###Let's evaluate the "classe" results from the training partition.
+```{r EDA, echo=TRUE}
+plot(trainPart$classe,main="Categories of the classe variable in the training partition",xlab="classe",ylab="freq")
+```
+In our training partition, we see that class A has more than 4000 observations, significantly higher than each of the other classes, which range between about 2500 and 3000.  This is good, because class A is correct technique, but the combined frequencies of classes B - E (incorrect technique) exceeds the total for class A.
+
+##Model comparisons
+###Let's construct a simple CART model to predict exercise results:
+```{r CART, echo=TRUE}
+cartTrain<-rpart(classe~.,data=trainPart,method="class")
+cartPredict<-predict(cartTrain,testPart,type="class")
+confusionMatrix(cartPredict,testPart$classe)
+```
+Our CART model has a prediction accurary of 72.3% and a reasonably tight 95% confidence interval.  We see that 1260 particiipants are correctly predicted for class A, 555 for class B, and so on.  The specificity is above 0.91 for all 5 classes, but the sensitivity varies between 0.58 (class B) and 0.90 (class A).
+
+###Let's now construct a random forest model to predict exercise results:
+```{r RandFor, echo=TRUE}
+rfTrain<-train(classe~.,data=trainPart,method="rf")
+rfPredict<-predict(rfTrain,testPart)
+confusionMatrix(rfPredict,testPart$classe)
+```
+Our Random Forest model has a prediction accurary of 99.3% and a very tight 95% confidence interval.  We see that 1393 particiipants are correctly predicted for class A, 938 for class B, and so on, and we have very few misclassification errors.  The specificity is above .995 for all 5 classes, and the sensitivity varies between .987 and .998.  This is a fairly dramatic improvement over the results from our CART model, so we select the Random Forest model for our predictions.  
+
+##Accuracy and out of sample error
+We see above that the Random Forest algorithm peCformed better than our CART model. Accuracy for the Random Forest model was 0.993 (95% CI: (.9899,.9949)) compared to 0.723 for CART (95% CI: (.7101,.7354)). The accuracy of the Random Forest model suggests the expected out-of-sample error is estimated at 0.007, or 0.7%.
+
+##Predictions of 20 observations based on Random Forest model
+###Using the code provided in the prediction submission instructions
+This will write out the predicted classe results (e.g., A, B, C...) for 20 observations - each to an individual file - which will be submitted in the subsequent step of the assignment.
